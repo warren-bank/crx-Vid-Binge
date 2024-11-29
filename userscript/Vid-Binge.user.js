@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Vid-Binge
 // @description  Watch videos in external player.
-// @version      1.0.0
-// @match        *://*.vidbinge.com/media/*
+// @version      1.0.1
+// @match        *://*.vidbinge.com/*
 // @icon         https://www.vidbinge.com/favicon.ico
 // @run-at       document-end
 // @homepage     https://github.com/warren-bank/crx-Vid-Binge/tree/userscript/es5
@@ -41,6 +41,47 @@ var debug = function(msg) {
   }
 }
 
+// ----------------------------------------------------------------------------- helper
+
+var find_vid = function() {
+  var vid_link, vid_url, referer_url
+  var regex, match, headers
+
+  try {
+    vid_link = Array.prototype.slice.call(
+      document.querySelectorAll('a[target="_blank"]')
+    )
+    .filter(function($a) {return ($a.href.indexOf('.m3u8') !== -1) || ($a.href.indexOf('.mpd') !== -1)})
+    .pop()
+
+    vid_url = vid_link.href
+
+    regex = /^.*[\?&]url=(.*)$/
+    match = regex.exec(vid_url)
+    if (match)
+      vid_url = decodeURIComponent(match[1])
+
+    headers = vid_url.split('&headers=')
+    if (headers.length === 2) {
+      vid_url = headers[0]
+      headers = JSON.parse(headers[1])
+      referer_url = headers.referer
+    }
+  }
+  catch(e) {}
+
+  return {vid_link, vid_url, referer_url}
+}
+
+var get_webcast_reloaded_url = function(vid_url, referer_url) {
+  var url = 'http://webcast-reloaded.frii.site/index.html#/watch/' + btoa(vid_url)
+
+  if (referer_url)
+    url += '/referer/' + btoa(referer_url)
+
+  return url
+}
+
 // ----------------------------------------------------------------------------- global click event handler (during capture phase)
 
 document.addEventListener('click', function(event) {
@@ -66,44 +107,25 @@ document.addEventListener('click', function(event) {
     // wait for download links to render..
     setTimeout(function() {
       try {
-        var needle = 'https://m3u8.wafflehacker.io/m3u8-proxy?url='
-        var copy_hls_link = document.querySelector('a[href^="' + needle + '"]')
-
-        if (!copy_hls_link)
+        var vid = find_vid()
+        if (!vid || !vid.vid_link || !vid.vid_url)
           throw 0
 
-        debug('proxied HLS URL is: ' + copy_hls_link.href)
+        var url = get_webcast_reloaded_url(vid.vid_url, vid.referer_url)
 
-        var hls_url = copy_hls_link.href
-        hls_url = hls_url.substring(needle.length, hls_url.length)
-        hls_url = decodeURIComponent(hls_url)
-        hls_url = hls_url.split('&headers=')
-
-        if (hls_url.length !== 2)
-          throw 0
-
-        var headers = JSON.parse(hls_url[1])
-        if (!headers || !headers.referer)
-          throw 0
-
-        var referer_url = headers.referer
-        hls_url = hls_url[0]
-
-        var webcast_reloaded_url = 'http://webcast-reloaded.frii.site/index.html#/watch/' + btoa(hls_url) + '/referer/' + btoa(referer_url)
-
-        debug('HLS URL is: ' + hls_url)
-        debug('Referer URL is: ' + referer_url)
-        debug('Webcast-Reloaded URL is: ' + webcast_reloaded_url)
+        debug('Video URL is: ' + vid.vid_url)
+        debug('Referer URL is: ' + vid.referer_url)
+        debug('Webcast-Reloaded URL is: ' + url)
 
         var webcast_reloaded_link = document.createElement('a')
-        webcast_reloaded_link.className = copy_hls_link.className
+        webcast_reloaded_link.className = vid.vid_link.className
         webcast_reloaded_link.setAttribute('id', user_options.dom.id.webcast_reloaded_link)
-        webcast_reloaded_link.setAttribute('href', webcast_reloaded_url)
+        webcast_reloaded_link.setAttribute('href', url)
         webcast_reloaded_link.setAttribute('target', '_blank')
         webcast_reloaded_link.textContent = 'Open in Webcast-Reloaded'
         webcast_reloaded_link.style.marginBottom = '0.5rem'
 
-        copy_hls_link.parentNode.appendChild(webcast_reloaded_link)
+        vid.vid_link.parentNode.appendChild(webcast_reloaded_link)
         webcast_reloaded_link.scrollIntoView(false)
 
         debug('Webcast-Reloaded link added to DOM')
